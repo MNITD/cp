@@ -14,12 +14,12 @@ void print_help();
 void parse_argv(int size, char ** argv, vector<string>*args, vector<string>* opts);
 string get_path();
 bool confirm(string message);
+int get_file_status(string & path);
 
 /*
  * Constants
  */
 const int OPTIONS_SIZE = 3;
-
 const string OPTIONS[OPTIONS_SIZE] = {
         "-f",
         "-h",
@@ -30,25 +30,18 @@ void parse_argv(int size, char ** argv, vector<string>*args, vector<string>*opts
     int i;
     int j;
 
-    printf("inside of parse_argv\n");
     for(i = 1; i < size; i++){
         string arg(argv[i]);
-        printf("arg: %s \n", arg.c_str());
         for(j = 0; j < OPTIONS_SIZE; j++){
-            printf("compare: %s and %s \n", arg.c_str(), OPTIONS[j].c_str() );
             if(arg.compare(OPTIONS[j]) == 0){
-                printf("opts push_back\n");
                 opts->push_back(arg);
                 break;
             }
         }
-        printf("compare: %d and %d \n", j, OPTIONS_SIZE );
         if(j == OPTIONS_SIZE){
-            printf("args push_back\n");
             args->push_back(arg);
         }
     }
-    printf("end of parse_argv\n");
 }
 
 void print_help(){
@@ -65,12 +58,10 @@ string get_path(){
     char *path = getcwd(buffer, sizeof(buffer));
     string s_cwd;
 
-
     if (path)
     {
         s_cwd = path;
         s_cwd += "/";
-        printf("current path: %s \n", s_cwd.c_str());
         return s_cwd;
     }
     else {
@@ -86,6 +77,21 @@ bool confirm(string message){
     return answer.compare("y") == 0;
 }
 
+/* Check status of file: whether it dir, not dir or does not exist
+ * @param path Full path of the file
+ * @return code of status 1 - directory, 0 - file, -1 - does not exist
+ */
+
+int get_file_status(string & path){
+    struct stat info;
+
+    if(stat( path.c_str(), &info ) != 0) {
+        return -1;
+    } else if(info.st_mode & S_IFDIR){
+        return 1;
+    }
+    return 0;
+}
 
 int main(int argc, char **argv) {
     int c;
@@ -99,13 +105,8 @@ int main(int argc, char **argv) {
 
     bool f_option = false;
 
-    printf("opts.size(): %lu \n", opts.size());
-    printf("args.size(): %lu \n", args.size());
-
     for(unsigned long i = 0; i < opts.size(); i++){
-        printf("%s \n",opts.at(i).c_str() );
-
-        if(opts.at(i).compare("--help") == 0 || opts.at(i).compare("-h") == 0){
+              if(opts.at(i).compare("--help") == 0 || opts.at(i).compare("-h") == 0){
             print_help();
             exit(EXIT_SUCCESS);
         }
@@ -120,19 +121,26 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
     else if(args.size() == 2){
-        string string1;
-        string string2;
+        string full_path1;
+        string full_path2;
 
         path = get_path();
-        string1 = path + args.at(0);
-        string2 = path + args.at(1);
-        in = fopen( string1.c_str(), "r" );
-        out = fopen( string2.c_str(), "r" );
+        full_path1 = path + args.at(0);
+        full_path2 = path + args.at(1);
+        in = fopen( full_path1.c_str(), "r" );
+        out = fopen( full_path2.c_str(), "r" );
 
-        if(in==NULL)
-        {
+        if(in==NULL) {
             printf("cp: cannot stat '%s': No such file or directory\n",args.at(0).c_str());
             return EXIT_FAILURE;
+        } else if ( get_file_status(full_path1) == 1 ){
+            printf("cp: copying directories is not supported\n");
+            return EXIT_FAILURE;
+        }
+
+        if(get_file_status(full_path2) == 1){
+            full_path2 = full_path2+ "/" + args.at(0);
+            out = fopen( full_path2.c_str(), "r" );
         }
 
         if(out != NULL && !f_option){
@@ -141,10 +149,9 @@ int main(int argc, char **argv) {
             if(!confirm("Would you like to re-write file?")) {
                 exit(EXIT_SUCCESS);
             }
-
         }
 
-        out = fopen( string2.c_str(), "w" );
+        out = fopen( full_path2.c_str(), "w" );
 
         while((c=getc(in))!=EOF)
             putc(c,out);
@@ -153,28 +160,31 @@ int main(int argc, char **argv) {
         fclose(out);
     }
     else{
-        string string1;
-        string string2;
+        string full_path1;
+        string full_path2;
 
         path = get_path();
-        printf("more then 2 args\n");
 
+        full_path2 = path + args.at(args.size() - 1);
 
-
+        if(get_file_status(full_path2) != 1) {
+            printf("cp: target '%s' is not a directory\n", args.at(args.size() - 1).c_str());
+            return EXIT_FAILURE;
+        }
 
         for(unsigned long i = 0; i <args.size() -1; i++){
-            string1 = path + args.at(i);
-            string2 = path + args.at(args.size() - 1) +"/"+ args.at(i);
+            full_path1 = path + args.at(i);
+            full_path2 = path + args.at(args.size() - 1) +"/"+ args.at(i);
 
-            printf("string1: %s\n", string1.c_str());
-            printf("string2: %s\n", string2.c_str());
-            in = fopen( string1.c_str(), "r" );
-            out = fopen( string2.c_str(), "r" );
+            in = fopen( full_path1.c_str(), "r" );
+            out = fopen( full_path2.c_str(), "r" );
 
-            if(in==NULL)
-            {
+            if( in == NULL ) {
                 printf("cp: cannot stat '%s': No such file or directory\n",args.at(i).c_str());
-                return EXIT_FAILURE;
+                continue;
+            } else if ( get_file_status(full_path1) == 1 ){
+                printf("cp: copying directories is not supported\n");
+                continue;
             }
 
             if(out != NULL && !f_option){
@@ -183,15 +193,9 @@ int main(int argc, char **argv) {
                 if(!confirm("Would you like to re-write file?")) {
                     continue;
                 }
-
             }
 
-            out = fopen( string2.c_str(), "w" );
-
-            if(out == NULL){
-                printf("cp: target '%s' is not a directory\n", args.at(args.size() - 1).c_str());
-                return EXIT_FAILURE;
-            }
+            out = fopen( full_path2.c_str(), "w" );
 
             while((c=getc(in))!=EOF)
                 putc(c,out);
